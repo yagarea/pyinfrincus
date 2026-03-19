@@ -10,6 +10,7 @@ from pyinfra.api.exceptions import ConnectError
 from pyinfra.connectors.base import BaseConnector
 from pyinfra.connectors.util import (
     CommandOutput,
+    extract_control_arguments,
     make_unix_command_for_host,
     run_local_process,
 )
@@ -23,6 +24,18 @@ class Incus(BaseConnector):
     handles_execution = True
 
     @staticmethod
+    def _parse_name(name):
+        """Split a possibly remote-qualified name into (remote, bare_name).
+
+        E.g. "otherRemote:mycontainer" -> ("otherRemote:", "mycontainer")
+             "mycontainer"        -> ("", "mycontainer")
+        """
+        if ":" in name:
+            remote, bare = name.split(":", 1)
+            return f"{remote}:", bare
+        return "", name
+
+    @staticmethod
     def make_names_data(name=None):
         """
         Generate inventory targets from incus list.
@@ -33,8 +46,13 @@ class Incus(BaseConnector):
         Yields:
             tuple: (name, data, groups)
         """
+        if isinstance(name, str):
+            remote, bare = Incus._parse_name(name)
+        else:
+            remote, bare = "", None
+
         result = subprocess.run(
-            ["incus", "list", "--format", "json"],
+            ["incus", "list", f"{remote}", "--format", "json"],
             capture_output=True,
             text=True,
             check=True,
@@ -42,15 +60,15 @@ class Incus(BaseConnector):
         containers = json.loads(result.stdout)
         names = [c["name"] for c in containers]
 
-        if isinstance(name, str):
+        if bare is not None:
             # Filter to specific container
-            if name not in names:
+            if bare not in names:
                 raise ValueError(f"Container '{name}' not found in incus list")
             yield name, {}, []
         else:
             # Yield all containers
-            for name in names:
-                yield name, {}, []
+            for n in names:
+                yield f"{remote}{n}", {}, []
 
     def run_shell_command(
         self,
@@ -62,8 +80,14 @@ class Incus(BaseConnector):
         """
         Execute a command on the container via incus exec.
         """
+        # TODO: support _timeout, _get_pty, _stdin, _success_exit_codes
+        control_arguments = extract_control_arguments(arguments)
+        _success_exit_codes = control_arguments.get("_success_exit_codes")
+
         container_name = self.host.name
-        full_command = make_unix_command_for_host(self.state, self.host, command)
+        full_command = make_unix_command_for_host(
+            self.state, self.host, command, **arguments
+        )
 
         # Build the incus exec command as a shell string
         shell_cmd = f"incus exec {shlex.quote(container_name)} -- {full_command}"
@@ -79,6 +103,8 @@ class Incus(BaseConnector):
             print_prefix=print_prefix,
         )
 
+        if _success_exit_codes:
+            return returncode in _success_exit_codes, output
         return returncode == 0, output
 
     def put_file(
@@ -104,7 +130,7 @@ class Incus(BaseConnector):
             local_path = filename_or_io
 
         target = f"{container_name}{remote_filename}"
-        shell_cmd = f"incus file push {shlex.quote(local_path)} {shlex.quote(target)}"
+        shell_cmd = f"incus file push --uid 0 --gid 0 {shlex.quote(local_path)} {shlex.quote(target)}"
 
         if print_input:
             print(f"{container_name}>>> pushing {local_path} to {remote_filename}")
@@ -164,8 +190,9 @@ class Incus(BaseConnector):
         Verify the container exists and is running.
         """
         container_name = self.host.name
+        remote, bare = self._parse_name(container_name)
         result = subprocess.run(
-            ["incus", "list", "--format", "json", container_name],
+            ["incus", "list", f"{remote}{bare}", "--format", "json"],
             capture_output=True,
             text=True,
         )

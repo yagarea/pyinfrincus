@@ -1,4 +1,6 @@
+import logging
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -6,17 +8,38 @@ from random import randbytes
 
 import pytest
 
+log = logging.getLogger(__name__)
 
-@pytest.fixture(scope="module")
-def container():
+
+#####
+# These tests can only be run if you have the incus cli set up
+#####
+
+# Environment variable is set locally to a second, non default incus server.
+REMOTES = ["", os.environ["PYINFRINCUS_REMOTE_SERVER"]]
+
+def run(*args, **kwargs):
+    cmd = args[0] if args else kwargs.get("args", [])
+    log.info("$ %s", shlex.join(cmd))
+    result = subprocess.run(*args, **kwargs)
+    if result.stdout:
+        log.debug(f"|> \n{result.stdout}")
+    return result
+
+
+@pytest.fixture(scope="module", params=REMOTES, ids=lambda r: r.rstrip(":") or "local")
+def container(request):
+    remote = request.param
     name = f"pyinfrincus-{randbytes(4).hex()}"
-    subprocess.run(["incus", "launch", "images:debian/13", name], check=True)
+    qualified = f"{remote}{name}"
+
+    run(["incus", "launch", "images:debian/13", qualified], check=True)
 
     # Wait for container to be RUNNING
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        result = subprocess.run(
-            ["incus", "list", name, "-f", "csv"],
+        result = run(
+            ["incus", "list", qualified, "-f", "csv"],
             capture_output=True,
             text=True,
         )
@@ -24,14 +47,14 @@ def container():
             break
         time.sleep(0.5)
     else:
-        raise TimeoutError(f"Container {name} not RUNNING after 20s")
+        raise TimeoutError(f"Container {qualified} not RUNNING after 20s\n{result}")
 
-    yield name
-    subprocess.run(["incus", "delete", "--force", name], check=True)
+    yield qualified
+    run(["incus", "delete", "--force", qualified], check=True)
 
 
 def run_pyinfra(container, *args):
-    return subprocess.run(
+    return run(
         ["pyinfra", "-y", f"@incus/{container}", *args],
         capture_output=True,
         text=True,
@@ -39,10 +62,7 @@ def run_pyinfra(container, *args):
 
 
 def test_container_exists(container):
-    result = subprocess.run(
-        ["incus", "info", container],
-        capture_output=True,
-    )
+    result = run(["incus", "info", container])
     assert result.returncode == 0
 
 
