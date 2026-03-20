@@ -1,5 +1,7 @@
 # pyinfrincus
 
+[![pypi badge](https://img.shields.io/pypi/v/pyinfrincus)](https://pypi.org/project/pyinfrincus/)
+
 A small package linking [pyinfra](https://pyinfra.com) and [incus](https://linuxcontainers.org/incus/)
 
 ### The `incus` connector
