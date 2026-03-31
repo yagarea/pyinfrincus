@@ -123,7 +123,8 @@ class Incus(BaseConnector):
 
         if isinstance(filename_or_io, IOBase):
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                tmp.write(filename_or_io.read())
+                data = filename_or_io.read()
+                tmp.write(data.encode() if isinstance(data, str) else data)
                 tmp.flush()
                 local_path = tmp.name
         else:
