@@ -39,11 +39,11 @@ def container(request):
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         result = run(
-            ["incus", "list", qualified, "-f", "csv"],
+            ["incus", "info", qualified],
             capture_output=True,
             text=True,
         )
-        if "(eth0)" in result.stdout:
+        if "Status: RUNNING" in result.stdout:
             break
         time.sleep(0.5)
     else:

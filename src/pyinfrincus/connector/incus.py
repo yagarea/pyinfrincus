@@ -193,7 +193,7 @@ class Incus(BaseConnector):
         container_name = self.host.name
         remote, bare = self._parse_name(container_name)
         result = subprocess.run(
-            ["incus", "list", f"{remote}{bare}", "--format", "json"],
+            ["incus", "list", f"{remote}", "--format", "json"],
             capture_output=True,
             text=True,
         )
@@ -202,10 +202,11 @@ class Incus(BaseConnector):
             raise ConnectError(f"Failed to query container '{container_name}'")
 
         containers = json.loads(result.stdout)
-        if not containers:
+        match = next((c for c in containers if c.get("name") == bare), None)
+        if match is None:
             raise ConnectError(f"Container '{container_name}' not found")
 
-        status = containers[0].get("status", "").lower()
+        status = match.get("status", "").lower()
         if status != "running":
             raise ConnectError(
                 f"Container '{container_name}' is not running (status: {status})"
