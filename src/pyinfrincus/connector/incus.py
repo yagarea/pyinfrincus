@@ -7,6 +7,7 @@ from typing import Tuple
 
 from pyinfra.api.command import StringCommand
 from pyinfra.api.exceptions import ConnectError
+from pyinfra.api.util import get_file_io
 from pyinfra.connectors.base import BaseConnector
 from pyinfra.connectors.util import (
     CommandOutput,
@@ -123,8 +124,8 @@ class Incus(BaseConnector):
 
         if isinstance(filename_or_io, IOBase):
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                data = filename_or_io.read()
-                tmp.write(data.encode() if isinstance(data, str) else data)
+                with get_file_io(filename_or_io) as file_io:
+                    tmp.write(file_io.read())
                 tmp.flush()
                 local_path = tmp.name
         else:
