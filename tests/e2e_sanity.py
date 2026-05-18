@@ -98,5 +98,8 @@ def test_file_lifecycle(container):
         result = run_pyinfra(container, "files.get", f"src={remote_path}", f"dest={download_path}")
         assert result.returncode == 0, f"files.get failed:\n{result.stderr}"
 
+        # incus file pull preserves the source's uid/gid/mode, so the
+        # root-owned file lands unreadable to our user.
+        os.chmod(download_path, 0o644)
         contents = open(download_path).read()
         assert contents == "Hello World", f"Expected 'Hello World', got: {contents!r}"
